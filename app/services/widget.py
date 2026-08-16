@@ -1,8 +1,8 @@
 from uuid import UUID
 
-from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import WidgetInactiveError, WidgetNotFoundError
 from app.models.widget import Widget
 from app.repositories.widget import WidgetRepository
 
@@ -39,10 +39,7 @@ class WidgetService:
         widget = await self.repository.get_by_id(widget_id)
 
         if widget is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Widget not found",
-            )
+            raise WidgetNotFoundError
 
         return widget
 
@@ -53,15 +50,9 @@ class WidgetService:
         widget = await self.repository.get_by_public_key(public_key)
 
         if widget is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Widget not found",
-            )
+            raise WidgetNotFoundError
 
         if not widget.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Widget is inactive",
-            )
+            raise WidgetInactiveError
 
         return widget
