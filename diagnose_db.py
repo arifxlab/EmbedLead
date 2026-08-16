@@ -1,9 +1,8 @@
 import asyncio
 
+from app.core.config import get_settings
 from sqlalchemy import inspect
 from sqlalchemy.ext.asyncio import create_async_engine
-
-from app.core.config import get_settings
 
 
 async def main() -> None:

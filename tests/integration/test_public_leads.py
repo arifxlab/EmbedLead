@@ -1,6 +1,7 @@
 import uuid
 
 import pytest
+from app.core.limiter import limiter
 from app.db.session import async_session_factory
 from app.models.tenant import Tenant
 from app.models.widget import Widget
@@ -155,3 +156,35 @@ async def test_public_lead_rejects_oversized_payload(client: AsyncClient) -> Non
 
     assert response.status_code == 413
     assert response.json()["detail"] == "Request payload too large"
+
+
+@pytest.mark.asyncio
+async def test_public_lead_rate_limit(client: AsyncClient) -> None:
+    limiter.reset()
+
+    try:
+        for _ in range(60):
+            response = await client.post(
+                "/api/v1/public/widgets/pk_nonexistent_widget/leads",
+                json={
+                    "name": "Rate Limit Test",
+                    "email": "rate-limit@example.com",
+                    "message": "Testing the public API rate limiter.",
+                },
+            )
+
+            assert response.status_code == 404
+            assert response.json()["detail"] == "Widget not found"
+
+        response = await client.post(
+            "/api/v1/public/widgets/pk_nonexistent_widget/leads",
+            json={
+                "name": "Rate Limit Test",
+                "email": "rate-limit@example.com",
+                "message": "This request should be rate limited.",
+            },
+        )
+
+        assert response.status_code == 429
+    finally:
+        limiter.reset()

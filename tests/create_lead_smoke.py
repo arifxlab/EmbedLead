@@ -3,7 +3,6 @@ import asyncio
 from app.db.session import async_session_factory
 from app.services.lead import LeadService
 
-
 TENANT_ID = "b5ff829c-c344-45d4-b8de-9769e40a0678"
 WIDGET_ID = "64a6ed82-0a7d-4304-87c9-fd018fb0be39"
 
