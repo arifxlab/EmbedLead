@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:17
+    container_name: embedlead-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: embedlead
+      POSTGRES_USER: embedlead
+      POSTGRES_PASSWORD: embedlead
+    ports:
+      - "5432:5432"
+    volumes:
+      - embedlead_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U embedlead -d embedlead"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:8
+    container_name: embedlead-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - embedlead_redis_data:/data
+    command:
+      [
+        "redis-server",
+        "--appendonly",
+        "yes"
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "redis-cli",
+          "ping"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  embedlead_postgres_data:
+  embedlead_redis_data:
