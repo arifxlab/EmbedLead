@@ -10,6 +10,11 @@ from starlette.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.exceptions import (
+    LeadNotFoundError,
+    WidgetInactiveError,
+    WidgetNotFoundError,
+)
 from app.core.limiter import limiter
 from app.core.redis import close_redis
 from app.db.session import close_database
@@ -47,9 +52,43 @@ app.add_exception_handler(
 )
 
 
+@app.exception_handler(WidgetNotFoundError)
+async def handle_widget_not_found(
+    _: Request,
+    __: WidgetNotFoundError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Widget not found"},
+    )
+
+
+@app.exception_handler(WidgetInactiveError)
+async def handle_widget_inactive(
+    _: Request,
+    __: WidgetInactiveError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=403,
+        content={"detail": "Widget is inactive"},
+    )
+
+
+@app.exception_handler(LeadNotFoundError)
+async def handle_lead_not_found(
+    _: Request,
+    __: LeadNotFoundError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=404,
+        content={"detail": "Lead not found"},
+    )
+
+
 @app.middleware("http")
 async def enforce_payload_size(
-    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
     body = await request.body()
 

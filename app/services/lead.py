@@ -2,6 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import LeadNotFoundError
 from app.models.lead import Lead
 from app.repositories.lead import LeadRepository
 
@@ -35,8 +36,13 @@ class LeadService:
     async def get_lead(
         self,
         lead_id: UUID,
-    ) -> Lead | None:
-        return await self.repository.get_by_id(lead_id)
+    ) -> Lead:
+        lead = await self.repository.get_by_id(lead_id)
+
+        if lead is None:
+            raise LeadNotFoundError
+
+        return lead
 
     async def get_widget_leads(
         self,

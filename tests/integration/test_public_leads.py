@@ -188,3 +188,15 @@ async def test_public_lead_rate_limit(client: AsyncClient) -> None:
         assert response.status_code == 429
     finally:
         limiter.reset()
+
+
+@pytest.mark.asyncio
+async def test_get_lead_rejects_unknown_lead(client: AsyncClient) -> None:
+    missing_lead_id = uuid.uuid4()
+
+    response = await client.get(
+        f"/api/v1/leads/{missing_lead_id}",
+    )
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Lead not found"

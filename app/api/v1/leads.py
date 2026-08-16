@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db_session
@@ -24,11 +24,5 @@ async def get_lead(
     service = LeadService(session)
 
     lead = await service.get_lead(lead_id)
-
-    if lead is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Lead not found",
-        )
 
     return LeadResponse.model_validate(lead)
