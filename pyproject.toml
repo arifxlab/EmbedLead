@@ -26,7 +26,9 @@ dependencies = [
     "python-multipart>=0.0.20,<1.0",
     "email-validator>=2.3,<3.0",
     "orjson>=3.11,<4.0",
-    "structlog>=25.4,<26.0"
+    "structlog>=25.4,<26.0",
+    "PyJWT>=2.10,<3.0",
+    "pwdlib[argon2]>=0.2,<1.0"
 ]
 
 [project.optional-dependencies]
@@ -94,3 +96,5 @@ module = [
     "slowapi.*"
 ]
 ignore_missing_imports = true
+
+
