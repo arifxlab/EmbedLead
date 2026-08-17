@@ -1,10 +1,11 @@
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.limiter import limiter
 from app.db.session import get_db_session
 from app.schemas.lead import LeadCreate, PublicLeadResponse
+from app.schemas.widget import PublicWidgetConfig
 from app.services.lead import LeadService
 from app.services.widget import WidgetService
 
@@ -14,6 +15,26 @@ router = APIRouter(
     prefix="/public",
     tags=["public"],
 )
+
+
+@router.get(
+    "/widgets/{public_key}/config",
+    response_model=PublicWidgetConfig,
+)
+async def get_widget_config(
+    public_key: str,
+    response: Response,
+    session: AsyncSession = Depends(get_db_session),
+) -> PublicWidgetConfig:
+    service = WidgetService(session)
+
+    config = await service.get_public_widget_config(public_key)
+
+    response.headers["Cache-Control"] = (
+        f"public, max-age={settings.widget_cache_ttl_seconds}"
+    )
+
+    return PublicWidgetConfig.model_validate(config)
 
 
 @router.post(

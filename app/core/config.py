@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     secret_key: str = Field(
         default="development-only-change-me",
-        min_length=16,
+        min_length=32,
     )
 
     model_config = SettingsConfigDict(

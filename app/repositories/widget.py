@@ -30,8 +30,15 @@ class WidgetRepository:
     async def get_by_id(
         self,
         widget_id: UUID,
+        tenant_id: UUID,
     ) -> Widget | None:
-        result = await self.session.execute(select(Widget).where(Widget.id == widget_id))
+        result = await self.session.execute(
+            select(Widget).where(
+                Widget.id == widget_id,
+                Widget.tenant_id == tenant_id,
+            )
+        )
+
         return result.scalar_one_or_none()
 
     async def get_by_public_key(
@@ -39,6 +46,7 @@ class WidgetRepository:
         public_key: str,
     ) -> Widget | None:
         result = await self.session.execute(select(Widget).where(Widget.public_key == public_key))
+
         return result.scalar_one_or_none()
 
     async def list_by_tenant(
@@ -48,4 +56,5 @@ class WidgetRepository:
         result = await self.session.execute(
             select(Widget).where(Widget.tenant_id == tenant_id).order_by(Widget.created_at.desc())
         )
+
         return list(result.scalars().all())

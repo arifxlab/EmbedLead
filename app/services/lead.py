@@ -36,16 +36,40 @@ class LeadService:
     async def get_lead(
         self,
         lead_id: UUID,
+        tenant_id: UUID,
     ) -> Lead:
-        lead = await self.repository.get_by_id(lead_id)
+        lead = await self.repository.get_by_id(
+            lead_id=lead_id,
+            tenant_id=tenant_id,
+        )
 
         if lead is None:
             raise LeadNotFoundError
 
         return lead
 
+    async def list_leads(
+        self,
+        tenant_id: UUID,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[Lead], int, int]:
+        leads, total = await self.repository.list_by_tenant(
+            tenant_id=tenant_id,
+            page=page,
+            page_size=page_size,
+        )
+
+        pages = (total + page_size - 1) // page_size
+
+        return leads, total, pages
+
     async def get_widget_leads(
         self,
         widget_id: UUID,
+        tenant_id: UUID,
     ) -> list[Lead]:
-        return await self.repository.get_by_widget_id(widget_id)
+        return await self.repository.get_by_widget_id(
+            widget_id=widget_id,
+            tenant_id=tenant_id,
+        )

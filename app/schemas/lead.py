@@ -23,6 +23,14 @@ class LeadResponse(BaseModel):
     updated_at: datetime
 
 
+class LeadListResponse(BaseModel):
+    items: list[LeadResponse]
+    page: int
+    page_size: int
+    total: int
+    pages: int
+
+
 class PublicLeadResponse(BaseModel):
     id: UUID
     message: str = "Lead submitted successfully"
