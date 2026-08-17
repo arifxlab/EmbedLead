@@ -1,5 +1,6 @@
 import json
 import secrets
+from typing import cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,8 @@ from app.repositories.widget import WidgetRepository
 
 PUBLIC_KEY_PREFIX = "pk_live_"
 PUBLIC_WIDGET_CACHE_PREFIX = "widget:public-config:"
+
+PublicWidgetConfigData = dict[str, str | bool]
 
 
 class WidgetService:
@@ -73,17 +76,22 @@ class WidgetService:
     async def get_public_widget_config(
         self,
         public_key: str,
-    ) -> dict:
+    ) -> PublicWidgetConfigData:
         cache_key = f"{PUBLIC_WIDGET_CACHE_PREFIX}{public_key}"
 
         cached = await get_cached(cache_key)
 
         if cached is not None:
-            return json.loads(cached)
+            cached_config = json.loads(cached)
+
+            if not isinstance(cached_config, dict):
+                raise ValueError("Cached widget configuration is invalid")
+
+            return cast(PublicWidgetConfigData, cached_config)
 
         widget = await self.get_public_widget(public_key)
 
-        config = {
+        config: PublicWidgetConfigData = {
             "id": str(widget.id),
             "name": widget.name,
             "public_key": widget.public_key,

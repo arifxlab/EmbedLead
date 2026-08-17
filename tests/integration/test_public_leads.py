@@ -77,11 +77,13 @@ async def test_public_widget_config_is_cached_and_tenant_safe(
         await session.refresh(widget)
 
         public_key = widget.public_key
+        widget_id = widget.id
 
     cache_key = f"widget:public-config:{public_key}"
 
     await delete_cached(cache_key)
 
+    # First request: cache miss -> database -> Redis.
     first_response = await client.get(
         f"/api/v1/public/widgets/{public_key}/config",
     )
@@ -90,7 +92,7 @@ async def test_public_widget_config_is_cached_and_tenant_safe(
 
     first_data = first_response.json()
 
-    assert first_data["id"] == str(widget.id)
+    assert first_data["id"] == str(widget_id)
     assert first_data["name"] == "Cached Widget"
     assert first_data["public_key"] == public_key
     assert first_data["is_active"] is True
@@ -102,8 +104,16 @@ async def test_public_widget_config_is_cached_and_tenant_safe(
 
     assert cached_value is not None
 
+    # Verify the cached value has the expected Redis TTL.
+    from app.core.redis import redis_client
+
+    ttl = await redis_client.ttl(cache_key)
+
+    assert 0 < ttl <= 300
+
+    # Change the database directly. The cached response must remain unchanged.
     async with async_session_factory() as session:
-        stored_widget = await session.get(Widget, widget.id)
+        stored_widget = await session.get(Widget, widget_id)
 
         assert stored_widget is not None
 
@@ -121,7 +131,6 @@ async def test_public_widget_config_is_cached_and_tenant_safe(
 
     assert second_data["name"] == "Cached Widget"
     assert second_data["name"] != "Changed In Database"
-
 
 
 @pytest.mark.asyncio
@@ -646,4 +655,3 @@ async def test_lead_listing_pagination_and_tenant_isolation(
     assert len(tenant_b_data["items"]) == 2
 
     assert all(item["name"].startswith("Tenant B") for item in tenant_b_data["items"])
-

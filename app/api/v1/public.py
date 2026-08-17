@@ -6,6 +6,7 @@ from app.core.limiter import limiter
 from app.db.session import get_db_session
 from app.schemas.lead import LeadCreate, PublicLeadResponse
 from app.schemas.widget import PublicWidgetConfig
+from app.services.geo import GeoService
 from app.services.lead import LeadService
 from app.services.widget import WidgetService
 
@@ -52,6 +53,19 @@ async def submit_lead(
     widget_service = WidgetService(session)
     widget = await widget_service.get_public_widget(public_key)
 
+    ip_address = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    geo_metadata = None
+
+    if ip_address:
+        geo_service = GeoService(request.app.state.http_client)
+
+        try:
+            geo_metadata = await geo_service.lookup(ip_address)
+        except Exception:
+            geo_metadata = None
+
     lead_service = LeadService(session)
 
     lead = await lead_service.create_lead(
@@ -60,6 +74,13 @@ async def submit_lead(
         name=payload.name,
         email=str(payload.email),
         message=payload.message,
+        ip_address=ip_address,
+        user_agent=user_agent,
+        country=geo_metadata.country if geo_metadata else None,
+        region=geo_metadata.region if geo_metadata else None,
+        city=geo_metadata.city if geo_metadata else None,
+        latitude=geo_metadata.latitude if geo_metadata else None,
+        longitude=geo_metadata.longitude if geo_metadata else None,
     )
 
     return PublicLeadResponse(id=lead.id)

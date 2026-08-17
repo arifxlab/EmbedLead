@@ -21,6 +21,13 @@ class LeadService:
         name: str | None,
         email: str,
         message: str | None,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        country: str | None = None,
+        region: str | None = None,
+        city: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
     ) -> Lead:
         lead = await self.repository.create(
             tenant_id=tenant_id,
@@ -28,6 +35,13 @@ class LeadService:
             name=name,
             email=email,
             message=message,
+            ip_address=ip_address,
+            user_agent=user_agent,
+            country=country,
+            region=region,
+            city=city,
+            latitude=latitude,
+            longitude=longitude,
         )
 
         await self.session.commit()

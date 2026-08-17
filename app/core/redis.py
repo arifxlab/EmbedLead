@@ -1,3 +1,5 @@
+from typing import Any, cast
+
 from redis.asyncio import Redis
 
 from app.core.config import get_settings
@@ -31,4 +33,5 @@ async def delete_cached(key: str) -> None:
 
 
 async def close_redis() -> None:
-    await redis_client.close()
+    client = cast(Any, redis_client)
+    await client.aclose()

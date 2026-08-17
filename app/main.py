@@ -2,6 +2,7 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import cast
 
+import httpx
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
@@ -25,11 +26,16 @@ settings = get_settings()
 
 
 @asynccontextmanager
-async def lifespan(_: FastAPI) -> AsyncGenerator[None, None]:
-    yield
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    http_client = httpx.AsyncClient()
+    app.state.http_client = http_client
 
-    await close_database()
-    await close_redis()
+    try:
+        yield
+    finally:
+        await http_client.aclose()
+        await close_database()
+        await close_redis()
 
 
 app = FastAPI(
