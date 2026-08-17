@@ -1,3 +1,4 @@
+from contextlib import suppress
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -5,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.exceptions import LeadNotFoundError
 from app.models.lead import Lead
 from app.repositories.lead import LeadRepository
+from app.workers.tasks import notify_new_lead
 
 
 class LeadService:
@@ -30,6 +32,12 @@ class LeadService:
 
         await self.session.commit()
         await self.session.refresh(lead)
+
+        with suppress(Exception):
+            notify_new_lead.delay(
+                str(lead.id),
+                lead.email,
+            )
 
         return lead
 
