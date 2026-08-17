@@ -11,7 +11,9 @@ from starlette.responses import JSONResponse
 from app.api.v1.router import api_router
 from app.core.config import get_settings
 from app.core.exceptions import (
+    InvalidCredentialsError,
     LeadNotFoundError,
+    UserAlreadyExistsError,
     WidgetInactiveError,
     WidgetNotFoundError,
 )
@@ -82,6 +84,28 @@ async def handle_lead_not_found(
     return JSONResponse(
         status_code=404,
         content={"detail": "Lead not found"},
+    )
+
+
+@app.exception_handler(UserAlreadyExistsError)
+async def handle_user_already_exists(
+    _: Request,
+    __: UserAlreadyExistsError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={"detail": "User already exists"},
+    )
+
+
+@app.exception_handler(InvalidCredentialsError)
+async def handle_invalid_credentials(
+    _: Request,
+    __: InvalidCredentialsError,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={"detail": "Invalid credentials"},
     )
 
 

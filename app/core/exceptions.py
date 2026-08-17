@@ -12,3 +12,11 @@ class WidgetInactiveError(AppError):
 
 class LeadNotFoundError(AppError):
     """Raised when a lead cannot be found."""
+
+
+class UserAlreadyExistsError(AppError):
+    """Raised when attempting to create a user with an existing email."""
+
+
+class InvalidCredentialsError(AppError):
+    """Raised when authentication credentials are invalid."""
