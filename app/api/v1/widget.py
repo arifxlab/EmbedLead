@@ -7,7 +7,7 @@ router = APIRouter(
     tags=["widget"],
 )
 
-WIDGET_DIR = Path(__file__).resolve().parents[2] / "widget"
+WIDGET_DIR = Path(__file__).resolve().parents[3] / "widget"
 
 
 def _serve_widget(version: str) -> PlainTextResponse:
