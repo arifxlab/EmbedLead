@@ -7,7 +7,10 @@ from app.models.widget import Widget
 
 
 class WidgetRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+    ) -> None:
         self.session = session
 
     async def create(
@@ -45,7 +48,11 @@ class WidgetRepository:
         self,
         public_key: str,
     ) -> Widget | None:
-        result = await self.session.execute(select(Widget).where(Widget.public_key == public_key))
+        result = await self.session.execute(
+            select(Widget).where(
+                Widget.public_key == public_key,
+            )
+        )
 
         return result.scalar_one_or_none()
 
@@ -54,7 +61,36 @@ class WidgetRepository:
         tenant_id: UUID,
     ) -> list[Widget]:
         result = await self.session.execute(
-            select(Widget).where(Widget.tenant_id == tenant_id).order_by(Widget.created_at.desc())
+            select(Widget)
+            .where(
+                Widget.tenant_id == tenant_id,
+            )
+            .order_by(
+                Widget.created_at.desc(),
+            )
         )
 
         return list(result.scalars().all())
+
+    async def update(
+        self,
+        widget: Widget,
+        name: str | None = None,
+        is_active: bool | None = None,
+    ) -> Widget:
+        if name is not None:
+            widget.name = name
+
+        if is_active is not None:
+            widget.is_active = is_active
+
+        await self.session.flush()
+
+        return widget
+
+    async def delete(
+        self,
+        widget: Widget,
+    ) -> None:
+        await self.session.delete(widget)
+        await self.session.flush()

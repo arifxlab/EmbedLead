@@ -59,6 +59,53 @@ class WidgetService:
 
         return widget
 
+    async def update_widget(
+        self,
+        widget_id: UUID,
+        tenant_id: UUID,
+        name: str | None = None,
+        is_active: bool | None = None,
+    ) -> Widget:
+        widget = await self.get_widget(
+            widget_id=widget_id,
+            tenant_id=tenant_id,
+        )
+
+        await self.repository.update(
+            widget=widget,
+            name=name,
+            is_active=is_active,
+        )
+
+        await self.session.commit()
+        await self.session.refresh(widget)
+
+        await self.invalidate_public_widget_config(
+            public_key=widget.public_key,
+        )
+
+        return widget
+
+    async def delete_widget(
+        self,
+        widget_id: UUID,
+        tenant_id: UUID,
+    ) -> None:
+        widget = await self.get_widget(
+            widget_id=widget_id,
+            tenant_id=tenant_id,
+        )
+
+        public_key = widget.public_key
+
+        await self.repository.delete(widget)
+
+        await self.session.commit()
+
+        await self.invalidate_public_widget_config(
+            public_key=public_key,
+        )
+
     async def get_public_widget(
         self,
         public_key: str,
