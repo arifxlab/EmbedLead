@@ -31,9 +31,7 @@ async def get_widget_config(
 
     config = await service.get_public_widget_config(public_key)
 
-    response.headers["Cache-Control"] = (
-        f"public, max-age={settings.widget_cache_ttl_seconds}"
-    )
+    response.headers["Cache-Control"] = f"public, max-age={settings.widget_cache_ttl_seconds}"
 
     return PublicWidgetConfig.model_validate(config)
 

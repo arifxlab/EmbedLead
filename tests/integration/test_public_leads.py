@@ -378,6 +378,123 @@ async def test_tenant_isolation_for_widgets(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_widget_embed_snippet_is_versioned_and_tenant_safe(
+    client: AsyncClient,
+) -> None:
+    tenant_a = Tenant(
+        name="Embed Tenant A",
+        slug=f"embed-tenant-a-{uuid.uuid4().hex[:12]}",
+    )
+
+    tenant_b = Tenant(
+        name="Embed Tenant B",
+        slug=f"embed-tenant-b-{uuid.uuid4().hex[:12]}",
+    )
+
+    async with async_session_factory() as session:
+        session.add_all([tenant_a, tenant_b])
+        await session.flush()
+
+        tenant_a_id = tenant_a.id
+        tenant_b_id = tenant_b.id
+
+        await session.commit()
+
+    password = "StrongPassword123!"
+
+    register_a = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "tenant_id": str(tenant_a_id),
+            "email": f"embed-a-{uuid.uuid4().hex[:12]}@example.com",
+            "password": password,
+        },
+    )
+
+    assert register_a.status_code == 201
+
+    register_b = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "tenant_id": str(tenant_b_id),
+            "email": f"embed-b-{uuid.uuid4().hex[:12]}@example.com",
+            "password": password,
+        },
+    )
+
+    assert register_b.status_code == 201
+
+    login_a = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": register_a.json()["email"],
+            "password": password,
+        },
+    )
+
+    assert login_a.status_code == 200
+    token_a = login_a.json()["access_token"]
+
+    login_b = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": register_b.json()["email"],
+            "password": password,
+        },
+    )
+
+    assert login_b.status_code == 200
+    token_b = login_b.json()["access_token"]
+
+    create_widget = await client.post(
+        "/api/v1/widgets",
+        headers={
+            "Authorization": f"Bearer {token_a}",
+        },
+        json={
+            "name": "Versioned Embed Widget",
+        },
+    )
+
+    assert create_widget.status_code == 201
+
+    widget_data = create_widget.json()
+    widget_id = widget_data["id"]
+    public_key = widget_data["public_key"]
+
+    embed_response = await client.get(
+        f"/api/v1/widgets/{widget_id}/embed",
+        headers={
+            "Authorization": f"Bearer {token_a}",
+        },
+    )
+
+    assert embed_response.status_code == 200
+
+    embed_data = embed_response.json()
+
+    assert embed_data["widget_id"] == widget_id
+    assert embed_data["public_key"] == public_key
+    assert embed_data["embed_snippet"] == (
+        '<script src="http://127.0.0.1:8000/api/v1/'
+        f'widget.v1.js?key={public_key}"></script>'
+    )
+    assert embed_data["embed_snippet"].count("<script") == 1
+    assert embed_data["embed_snippet"].count("</script>") == 1
+    assert "widget.v1.js" in embed_data["embed_snippet"]
+
+    cross_tenant_response = await client.get(
+        f"/api/v1/widgets/{widget_id}/embed",
+        headers={
+            "Authorization": f"Bearer {token_b}",
+        },
+    )
+
+    assert cross_tenant_response.status_code == 404
+    assert cross_tenant_response.json()["detail"] == "Widget not found"
+
+
+@pytest.mark.asyncio
 async def test_created_widget_public_key_accepts_lead(
     client: AsyncClient,
 ) -> None:
