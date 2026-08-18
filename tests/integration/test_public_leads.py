@@ -8,6 +8,7 @@ from app.models.lead import Lead
 from app.models.tenant import Tenant
 from app.models.widget import Widget
 from httpx import AsyncClient
+from sqlalchemy import select
 
 
 @pytest.mark.asyncio
@@ -772,3 +773,407 @@ async def test_lead_listing_pagination_and_tenant_isolation(
     assert len(tenant_b_data["items"]) == 2
 
     assert all(item["name"].startswith("Tenant B") for item in tenant_b_data["items"])
+
+@pytest.mark.asyncio
+async def test_public_lead_honeypot_rejects_spam_without_persistence(
+    client: AsyncClient,
+) -> None:
+    tenant = Tenant(
+        name="Honeypot Test Tenant",
+        slug=f"honeypot-test-{uuid.uuid4().hex[:12]}",
+    )
+
+    async with async_session_factory() as session:
+        session.add(tenant)
+        await session.flush()
+
+        widget = Widget(
+            tenant_id=tenant.id,
+            name="Honeypot Test Widget",
+            public_key=f"pk_honeypot_{uuid.uuid4().hex[:20]}",
+            is_active=True,
+        )
+
+        session.add(widget)
+        await session.commit()
+        await session.refresh(widget)
+
+        public_key = widget.public_key
+        widget_id = widget.id
+
+    response = await client.post(
+        f"/api/v1/public/widgets/{public_key}/leads",
+        json={
+            "name": "Spam Bot",
+            "email": "spam-bot@example.com",
+            "message": "This submission should never be persisted.",
+            "website": "https://spam.example.com",
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["id"] is None
+    assert data["message"] == "Lead submitted successfully"
+
+    async with async_session_factory() as session:
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(Lead).where(Lead.widget_id == widget_id)
+        )
+
+        persisted_leads = result.scalars().all()
+
+        assert persisted_leads == []
+
+@pytest.mark.asyncio
+async def test_public_lead_persists_when_notification_side_effect_fails(
+    client: AsyncClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tenant = Tenant(
+        name="Side Effect Failure Tenant",
+        slug=f"side-effect-{uuid.uuid4().hex[:12]}",
+    )
+
+    async with async_session_factory() as session:
+        session.add(tenant)
+        await session.flush()
+
+        widget = Widget(
+            tenant_id=tenant.id,
+            name="Side Effect Failure Widget",
+            public_key=f"pk_side_effect_{uuid.uuid4().hex[:20]}",
+            is_active=True,
+        )
+
+        session.add(widget)
+        await session.commit()
+        await session.refresh(widget)
+
+        public_key = widget.public_key
+        widget_id = widget.id
+
+    def fail_notification(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("Simulated notification failure")
+
+    monkeypatch.setattr(
+        "app.services.lead.notify_new_lead.delay",
+        fail_notification,
+    )
+
+    response = await client.post(
+        f"/api/v1/public/widgets/{public_key}/leads",
+        json={
+            "name": "Side Effect Failure Lead",
+            "email": "side-effect@example.com",
+            "message": "This lead must survive notification failure.",
+        },
+    )
+
+    assert response.status_code == 201
+
+    data = response.json()
+
+    assert data["id"] is not None
+    lead_id = uuid.UUID(data["id"])
+
+    async with async_session_factory() as session:
+        result = await session.execute(
+            select(Lead).where(
+                Lead.id == lead_id,
+                Lead.widget_id == widget_id,
+            )
+        )
+
+        persisted_lead = result.scalar_one_or_none()
+
+        assert persisted_lead is not None
+        assert persisted_lead.email == "side-effect@example.com"
+        assert persisted_lead.name == "Side Effect Failure Lead"
+
+
+
+
+@pytest.mark.asyncio
+async def test_analytics_overview_returns_tenant_scoped_counts(
+    client: AsyncClient,
+) -> None:
+    tenant = Tenant(
+        name="Analytics Tenant",
+        slug=f"analytics-{uuid.uuid4().hex[:12]}",
+    )
+
+    async with async_session_factory() as session:
+        session.add(tenant)
+        await session.flush()
+
+        widget = Widget(
+            tenant_id=tenant.id,
+            name="Analytics Widget",
+            public_key=f"pk_analytics_{uuid.uuid4().hex[:20]}",
+            is_active=True,
+        )
+
+        session.add(widget)
+        await session.commit()
+        await session.refresh(widget)
+
+        lead_one = Lead(
+            tenant_id=tenant.id,
+            widget_id=widget.id,
+            name="Analytics Lead One",
+            email=f"analytics-one-{uuid.uuid4().hex[:8]}@example.com",
+            message="First analytics lead",
+            country="Pakistan",
+            city="Karachi",
+        )
+
+        lead_two = Lead(
+            tenant_id=tenant.id,
+            widget_id=widget.id,
+            name="Analytics Lead Two",
+            email=f"analytics-two-{uuid.uuid4().hex[:8]}@example.com",
+            message="Second analytics lead",
+            country="Pakistan",
+            city="Lahore",
+        )
+
+        session.add_all([lead_one, lead_two])
+        await session.commit()
+
+    password = "StrongPassword123!"
+    email = f"analytics-{uuid.uuid4().hex[:12]}@example.com"
+
+    register_response = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "tenant_id": str(tenant.id),
+            "email": email,
+            "password": password,
+        },
+    )
+
+    assert register_response.status_code == 201
+
+    login_response = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email,
+            "password": password,
+        },
+    )
+
+    assert login_response.status_code == 200
+
+    token = login_response.json()["access_token"]
+
+    response = await client.get(
+        "/api/v1/analytics/overview",
+        headers={
+            "Authorization": f"Bearer {token}",
+        },
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["total_leads"] == 2
+    assert data["leads_today"] == 2
+    assert data["leads_this_week"] == 2
+    assert data["leads_this_month"] == 2
+
+    countries = {
+        item["name"]: item["count"]
+        for item in data["countries"]
+    }
+
+    cities = {
+        item["name"]: item["count"]
+        for item in data["cities"]
+    }
+
+    assert countries["Pakistan"] == 2
+    assert cities["Karachi"] == 1
+    assert cities["Lahore"] == 1
+
+
+@pytest.mark.asyncio
+async def test_analytics_overview_is_tenant_isolated(
+    client: AsyncClient,
+) -> None:
+    tenant_a = Tenant(
+        name="Analytics Tenant A",
+        slug=f"analytics-a-{uuid.uuid4().hex[:12]}",
+    )
+
+    tenant_b = Tenant(
+        name="Analytics Tenant B",
+        slug=f"analytics-b-{uuid.uuid4().hex[:12]}",
+    )
+
+    async with async_session_factory() as session:
+        session.add_all([tenant_a, tenant_b])
+        await session.flush()
+
+        widget_a = Widget(
+            tenant_id=tenant_a.id,
+            name="Analytics Widget A",
+            public_key=f"pk_analytics_a_{uuid.uuid4().hex[:20]}",
+            is_active=True,
+        )
+
+        widget_b = Widget(
+            tenant_id=tenant_b.id,
+            name="Analytics Widget B",
+            public_key=f"pk_analytics_b_{uuid.uuid4().hex[:20]}",
+            is_active=True,
+        )
+
+        session.add_all([widget_a, widget_b])
+        await session.flush()
+
+        session.add_all(
+            [
+                Lead(
+                    tenant_id=tenant_a.id,
+                    widget_id=widget_a.id,
+                    name="Tenant A Lead",
+                    email=f"tenant-a-{uuid.uuid4().hex[:8]}@example.com",
+                    country="Pakistan",
+                    city="Karachi",
+                ),
+                Lead(
+                    tenant_id=tenant_b.id,
+                    widget_id=widget_b.id,
+                    name="Tenant B Lead One",
+                    email=f"tenant-b-one-{uuid.uuid4().hex[:8]}@example.com",
+                    country="United States",
+                    city="New York",
+                ),
+                Lead(
+                    tenant_id=tenant_b.id,
+                    widget_id=widget_b.id,
+                    name="Tenant B Lead Two",
+                    email=f"tenant-b-two-{uuid.uuid4().hex[:8]}@example.com",
+                    country="United States",
+                    city="Chicago",
+                ),
+            ]
+        )
+
+        await session.commit()
+
+    password = "StrongPassword123!"
+
+    email_a = f"analytics-a-{uuid.uuid4().hex[:12]}@example.com"
+    email_b = f"analytics-b-{uuid.uuid4().hex[:12]}@example.com"
+
+    register_a = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "tenant_id": str(tenant_a.id),
+            "email": email_a,
+            "password": password,
+        },
+    )
+
+    register_b = await client.post(
+        "/api/v1/auth/register",
+        json={
+            "tenant_id": str(tenant_b.id),
+            "email": email_b,
+            "password": password,
+        },
+    )
+
+    assert register_a.status_code == 201
+    assert register_b.status_code == 201
+
+    login_a = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email_a,
+            "password": password,
+        },
+    )
+
+    login_b = await client.post(
+        "/api/v1/auth/login",
+        json={
+            "email": email_b,
+            "password": password,
+        },
+    )
+
+    assert login_a.status_code == 200
+    assert login_b.status_code == 200
+
+    token_a = login_a.json()["access_token"]
+    token_b = login_b.json()["access_token"]
+
+    response_a = await client.get(
+        "/api/v1/analytics/overview",
+        headers={
+            "Authorization": f"Bearer {token_a}",
+        },
+    )
+
+    response_b = await client.get(
+        "/api/v1/analytics/overview",
+        headers={
+            "Authorization": f"Bearer {token_b}",
+        },
+    )
+
+    assert response_a.status_code == 200
+    assert response_b.status_code == 200
+
+    data_a = response_a.json()
+    data_b = response_b.json()
+
+    assert data_a["total_leads"] == 1
+    assert data_b["total_leads"] == 2
+
+    countries_a = {
+        item["name"]: item["count"]
+        for item in data_a["countries"]
+    }
+
+    countries_b = {
+        item["name"]: item["count"]
+        for item in data_b["countries"]
+    }
+
+    assert countries_a == {"Pakistan": 1}
+    assert countries_b == {"United States": 2}
+
+    cities_a = {
+        item["name"]: item["count"]
+        for item in data_a["cities"]
+    }
+
+    cities_b = {
+        item["name"]: item["count"]
+        for item in data_b["cities"]
+    }
+
+    assert cities_a == {"Karachi": 1}
+    assert cities_b == {
+        "Chicago": 1,
+        "New York": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_analytics_overview_requires_authentication(
+    client: AsyncClient,
+) -> None:
+    response = await client.get("/api/v1/analytics/overview")
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Authentication required"

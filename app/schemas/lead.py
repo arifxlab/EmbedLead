@@ -8,6 +8,7 @@ class LeadCreate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     email: EmailStr
     message: str | None = Field(default=None, max_length=5000)
+    website: str | None = Field(default=None, max_length=255)
 
 
 class LeadResponse(BaseModel):
@@ -32,5 +33,5 @@ class LeadListResponse(BaseModel):
 
 
 class PublicLeadResponse(BaseModel):
-    id: UUID
+    id: UUID | None = None
     message: str = "Lead submitted successfully"

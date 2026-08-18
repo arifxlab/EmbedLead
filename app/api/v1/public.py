@@ -31,7 +31,9 @@ async def get_widget_config(
 
     config = await service.get_public_widget_config(public_key)
 
-    response.headers["Cache-Control"] = f"public, max-age={settings.widget_cache_ttl_seconds}"
+    response.headers["Cache-Control"] = (
+        f"public, max-age={settings.widget_cache_ttl_seconds}"
+    )
 
     return PublicWidgetConfig.model_validate(config)
 
@@ -50,6 +52,11 @@ async def submit_lead(
 ) -> PublicLeadResponse:
     widget_service = WidgetService(session)
     widget = await widget_service.get_public_widget(public_key)
+
+    if payload.website:
+        return PublicLeadResponse(
+            message="Lead submitted successfully",
+        )
 
     ip_address = request.client.host if request.client else None
     user_agent = request.headers.get("user-agent")
