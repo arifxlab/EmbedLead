@@ -1,258 +1,237 @@
 # EmbedLead
 
-Multi-tenant embeddable lead-capture infrastructure built with FastAPI, PostgreSQL, Redis, and Celery.
+**Embeddable Widget & Lead-Capture Platform**
 
-EmbedLead provides a secure backend for websites and applications that need to embed lead-capture widgets without exposing tenant data or internal APIs. Each tenant can manage its own widgets and leads while public clients interact through scoped widget public keys.
+EmbedLead is a multi-tenant backend platform that lets customers create embeddable
+lead-capture widgets and install them on external websites with a single
+`<script>` tag.
 
-## Overview
+A visitor can submit a lead from a website that EmbedLead does not control. The
+backend validates the request, applies abuse protection, enriches the submission
+with IP/geolocation metadata, persists it under the correct tenant, and performs
+non-critical notification work without allowing secondary failures to break the
+main submission path.
 
-EmbedLead is designed as a backend-first SaaS-style platform with a clear separation between:
+Built as the FlyRank Internship Backend Track Capstone.
 
-- authenticated tenant management APIs
-- public widget APIs
-- application services
-- repository/data-access layers
+---
+
+## What EmbedLead Demonstrates
+
+The project focuses on production-oriented backend engineering concerns:
+
+- Multi-tenant architecture
+- Authentication and authorization
+- Tenant isolation
+- Widget CRUD
+- Public widget keys
+- Embeddable JavaScript
+- Cross-origin browser requests
+- CORS
+- Request validation
+- Oversized payload protection
+- Rate limiting
+- Honeypot spam protection
+- Redis caching/infrastructure
+- IP metadata collection
+- Geo-provider fallback
+- Safe background side effects
 - PostgreSQL persistence
-- Redis caching
-- Celery background processing
+- Alembic migrations
+- Pagination
+- Tenant-scoped analytics
+- Automated unit and integration testing
+- Ruff linting
+- Strict mypy type checking
+- Docker-based local infrastructure
 
-The system focuses on production-oriented backend concerns such as tenant isolation, authentication, rate limiting, payload protection, caching, asynchronous processing, database migrations, and automated testing.
+The core design principle is:
 
-## Core Features
+> Public traffic is untrusted. Validate it at the boundary, protect the service,
+> degrade gracefully when dependencies fail, and never allow a non-critical
+> dependency to destroy the primary business operation.
 
-### Multi-Tenant Architecture
-
-Every tenant owns its widgets and leads.
-
-Tenant-scoped queries enforce ownership at the repository layer so that authenticated users cannot access resources belonging to another tenant.
-
-### Authentication
-
-EmbedLead provides authenticated tenant APIs using:
-
-- JWT access tokens
-- password hashing with Argon2
-- protected management endpoints
-- tenant-aware authorization
-
-### Embeddable Public Widgets
-
-Widgets receive generated public keys using the format:
-
-```text
-pk_live_<secure-random-key>
-```
-
-Public clients can submit leads using the widget's public key without requiring a user JWT.
-
-Example:
-
-```text
-POST /api/v1/public/widgets/{public_key}/leads
-```
-
-### Lead Capture
-
-Leads support:
-
-- name
-- email
-- message
-- IP address
-- user agent
-- country
-- region
-- city
-- latitude
-- longitude
-
-Lead creation is persisted transactionally before notification work is dispatched.
-
-### Geolocation
-
-Public lead submissions can resolve geographic metadata from the request IP.
-
-The geolocation service supports:
-
-- primary provider lookup
-- fallback provider behavior
-- graceful failure handling
-
-### Redis Caching
-
-Public widget configuration is cached through Redis.
-
-The cache uses a widget-specific key:
-
-```text
-widget:public-config:{public_key}
-```
-
-Cached configuration reduces repeated database queries for frequently accessed public widget endpoints.
-
-### Background Processing
-
-Celery is configured with Redis as its broker and result backend.
-
-Lead notification work is dispatched asynchronously so the public submission request does not need to perform background notification processing synchronously.
-
-Tasks also support automatic retry behavior.
-
-### Rate Limiting
-
-Public endpoints are protected using SlowAPI-based rate limiting to reduce abuse and excessive request volume.
-
-### Payload Protection
-
-Incoming request bodies are checked against a configurable maximum payload size.
-
-Oversized requests receive:
-
-```text
-413 Request Entity Too Large
-```
-
-### CORS
-
-CORS behavior is configurable through application settings and restricted to configured origins.
-
-### Database Migrations
-
-Database schema changes are managed through Alembic.
-
-The migration history currently includes:
-
-- tenant and user tables
-- password hash support
-- widgets
-- leads
-- lead metadata
+---
 
 ## Architecture
 
 ```text
-                         ┌──────────────────────┐
-                         │      Client / Web    │
-                         │   Embedded Widget    │
-                         └──────────┬───────────┘
-                                    │
-                                    ▼
-                         ┌──────────────────────┐
-                         │      FastAPI API     │
-                         │                      │
-                         │ Authenticated APIs   │
-                         │ Public Widget APIs   │
-                         └──────────┬───────────┘
-                                    │
-                    ┌───────────────┼────────────────┐
-                    │               │                │
-                    ▼               ▼                ▼
-              ┌──────────┐   ┌────────────┐   ┌────────────┐
-              │ Services │   │ Repositories│   │   Redis    │
-              │          │   │            │   │   Cache    │
-              └────┬─────┘   └─────┬──────┘   └────────────┘
-                   │               │
-                   │               ▼
-                   │        ┌──────────────┐
-                   │        │  PostgreSQL  │
-                   │        └──────────────┘
-                   │
-                   ▼
-            ┌──────────────┐
-            │    Celery    │
-            │  Background  │
-            │    Tasks     │
-            └──────┬───────┘
-                   │
-                   ▼
-                Redis
+                         ┌─────────────────────────┐
+                         │      Widget Owner        │
+                         │   Authenticated Client   │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │   Widget Management API  │
+                         │       FastAPI            │
+                         └────────────┬────────────┘
+                                      │
+                         ┌────────────▼────────────┐
+                         │     Tenant Isolation     │
+                         │  Services / Repositories │
+                         └────────────┬────────────┘
+                                      │
+                                      ▼
+                         ┌─────────────────────────┐
+                         │      PostgreSQL 17       │
+                         │ widgets / leads / data  │
+                         └─────────────────────────┘
+
+
+ ┌───────────────────────┐
+ │ External Customer     │
+ │ Website               │
+ │                       │
+ │ second-origin demo    │
+ └───────────┬───────────┘
+             │
+             │ <script src=".../widget.v1.js?key=...">
+             ▼
+ ┌───────────────────────┐
+ │ Versioned JS Widget   │
+ │ widget.v1.js          │
+ └───────────┬───────────┘
+             │
+             ├──── GET public widget config
+             │
+             └──── POST public lead
+                         │
+                         ▼
+              ┌───────────────────────┐
+              │ Public Submission API │
+              └───────────┬───────────┘
+                          │
+              ┌───────────▼───────────┐
+              │ Boundary Validation   │
+              │ Pydantic              │
+              └───────────┬───────────┘
+                          │
+              ┌───────────▼───────────┐
+              │ Abuse Protection      │
+              │ Rate Limit + Honeypot  │
+              └───────────┬───────────┘
+                          │
+              ┌───────────▼───────────┐
+              │ Geo Enrichment        │
+              │ Provider A → B        │
+              └───────────┬───────────┘
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │ PostgreSQL      │
+                 │ Persist Lead    │
+                 └────────┬────────┘
+                          │
+                          ▼
+                 ┌─────────────────┐
+                 │ Notification    │
+                 │ Side Effect     │
+                 │ Failure-safe    │
+                 └─────────────────┘
 ```
 
-## Request Flow
+---
 
-### Public Lead Submission
+## Request Flows
+
+### 1. Widget Owner Flow
 
 ```text
-Client
-  │
-  │ POST /public/widgets/{public_key}/leads
-  ▼
-FastAPI
-  │
-  ├── Validate payload
-  ├── Apply rate limit
-  ├── Validate widget public key
-  ├── Verify widget is active
-  ├── Resolve request metadata
-  ├── Resolve geolocation
-  │
-  ▼
-LeadService
-  │
-  ▼
-LeadRepository
-  │
-  ▼
-PostgreSQL
-  │
-  ├── Commit lead
-  │
-  ▼
-Celery
-  │
-  ▼
-Background notification
+Authenticated owner
+       │
+       ▼
+Create widget
+       │
+       ▼
+Widget stored under tenant
+       │
+       ▼
+Generate public widget key
+       │
+       ▼
+Generate embed snippet
+       │
+       ▼
+Customer copies one-line <script>
 ```
+
+### 2. Visitor Flow
+
+```text
+External website
+       │
+       ▼
+widget.v1.js
+       │
+       ├── GET public configuration
+       │
+       ▼
+Render form
+       │
+       ▼
+Visitor submits
+       │
+       ▼
+CORS + validation
+       │
+       ▼
+Rate limit + honeypot
+       │
+       ▼
+Geo Provider A
+       │
+       ├── failure ──► Provider B
+       │
+       └── failure ──► continue without geo
+       │
+       ▼
+Persist lead
+       │
+       ▼
+Notification
+       │
+       └── failure ──► ignored for primary request
+```
+
+### 3. Dashboard Flow
+
+```text
+Authenticated owner
+       │
+       ▼
+Tenant-scoped dashboard API
+       │
+       ├── Lead list
+       ├── Pagination
+       ├── Widget statistics
+       └── Geo analytics
+```
+
+---
 
 ## Technology Stack
 
-### Backend
+| Layer | Technology |
+|---|---|
+| Language | Python 3.11 |
+| API | FastAPI |
+| Validation | Pydantic |
+| ORM | SQLAlchemy |
+| Migrations | Alembic |
+| Database | PostgreSQL 17 |
+| Cache / infrastructure | Redis 8 |
+| Background jobs | Celery |
+| HTTP server | Uvicorn |
+| Testing | pytest |
+| Linting | Ruff |
+| Type checking | mypy |
+| Infrastructure | Docker Compose |
+| Browser widget | Vanilla JavaScript |
+| Demo customer site | Plain HTML |
+| Version control | Git / GitHub |
 
-- Python 3.11
-- FastAPI
-- Uvicorn
-- Pydantic
-- Pydantic Settings
-- SQLAlchemy 2.x
-- asyncpg
-
-### Database
-
-- PostgreSQL
-- Alembic
-
-### Caching and Background Processing
-
-- Redis
-- Celery
-
-### Security
-
-- JWT
-- PyJWT
-- Argon2 password hashing
-- SlowAPI rate limiting
-- Configurable CORS
-- Request payload size protection
-- Tenant isolation
-
-### Networking and Serialization
-
-- HTTPX
-- orjson
-- python-multipart
-
-### Observability
-
-- structlog
-
-### Development and Quality
-
-- pytest
-- pytest-asyncio
-- pytest-cov
-- Ruff
-- mypy
+---
 
 ## Project Structure
 
@@ -261,161 +240,64 @@ EmbedLead/
 │
 ├── app/
 │   ├── api/
-│   │   ├── dependencies.py
 │   │   └── v1/
-│   │       ├── auth.py
-│   │       ├── health.py
-│   │       ├── leads.py
 │   │       ├── public.py
-│   │       ├── router.py
-│   │       └── widgets.py
+│   │       ├── widget.py
+│   │       └── ...
 │   │
 │   ├── core/
-│   │   ├── config.py
-│   │   ├── exceptions.py
-│   │   ├── limiter.py
-│   │   ├── redis.py
-│   │   └── security.py
-│   │
 │   ├── db/
-│   │   ├── base.py
-│   │   └── session.py
-│   │
-│   ├── middleware/
-│   │
 │   ├── models/
-│   │   ├── lead.py
-│   │   ├── mixins.py
-│   │   ├── tenant.py
-│   │   ├── user.py
-│   │   └── widget.py
-│   │
-│   ├── repositories/
-│   │   ├── lead.py
-│   │   ├── user.py
-│   │   └── widget.py
-│   │
 │   ├── schemas/
-│   │   ├── auth.py
-│   │   ├── lead.py
-│   │   └── widget.py
-│   │
 │   ├── services/
-│   │   ├── auth.py
-│   │   ├── geo.py
-│   │   ├── lead.py
-│   │   └── widget.py
-│   │
 │   ├── workers/
-│   │   ├── celery_app.py
-│   │   └── tasks.py
-│   │
 │   └── main.py
 │
 ├── alembic/
 │   └── versions/
 │
+├── demo/
+│   └── second-origin/
+│       └── index.html
+│
+├── widget/
+│   └── widget.v1.js
+│
 ├── tests/
 │   ├── integration/
-│   │   └── test_public_leads.py
-│   ├── security/
-│   ├── unit/
-│   │   ├── test_config.py
-│   │   └── test_geo.py
-│   └── conftest.py
+│   └── unit/
 │
+├── EVIDENCE.md
+├── BUILDLOG.md
+├── capstone.yaml
+├── .env.example
+├── docker-compose.yml
 ├── pyproject.toml
 └── README.md
 ```
 
-## API Overview
+---
 
-### Health
+## Local Setup
 
-```text
-GET /api/v1/health
-```
+### Prerequisites
 
-Used to verify application availability.
+Install:
 
-### Authentication
+- Python 3.11+
+- Docker Desktop
+- Git
 
-```text
-POST /api/v1/auth/register
-POST /api/v1/auth/login
-```
-
-### Widget Management
-
-Authenticated widget management endpoints allow tenants to create and manage their widgets.
-
-Example:
-
-```text
-POST /api/v1/widgets
-```
-
-### Public Widget Configuration
-
-```text
-GET /api/v1/public/widgets/{public_key}
-```
-
-Public widget configuration can be served through the Redis cache.
-
-### Public Lead Submission
-
-```text
-POST /api/v1/public/widgets/{public_key}/leads
-```
-
-This endpoint is intended to be called by embedded websites.
-
-### Lead Management
-
-Authenticated tenants can retrieve their leads and individual lead records.
-
-Example:
-
-```text
-GET /api/v1/leads
-GET /api/v1/leads/{lead_id}
-```
-
-## Environment Configuration
-
-EmbedLead uses Pydantic Settings for configuration.
-
-Create an environment file containing the required application configuration.
-
-Typical configuration includes:
-
-```text
-APP_NAME
-APP_VERSION
-API_PREFIX
-DATABASE_URL
-REDIS_URL
-JWT_SECRET_KEY
-JWT_ALGORITHM
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES
-CORS_ORIGINS
-MAX_SUBMISSION_PAYLOAD_BYTES
-WIDGET_CACHE_TTL_SECONDS
-```
-
-Never commit production secrets to Git.
-
-## Local Development
+No paid services or credit card are required.
 
 ### 1. Clone the repository
 
 ```bash
-git clone <repository-url>
+git clone <YOUR_PUBLIC_GITHUB_REPOSITORY>
 cd EmbedLead
 ```
 
-### 2. Create a virtual environment
+### 2. Create the virtual environment
 
 Windows PowerShell:
 
@@ -427,32 +309,84 @@ python -m venv .venv
 ### 3. Install dependencies
 
 ```bash
-pip install -e ".[dev]"
+pip install -r requirements.txt
 ```
 
-### 4. Configure environment variables
+If the project is installed through the project's configured package manager,
+use the dependency installation command documented by the repository.
 
-Create your local environment configuration and provide the PostgreSQL, Redis, JWT, CORS, and application settings.
+### 4. Configure environment
 
-### 5. Run database migrations
+Copy:
+
+```
+.env.example
+```
+
+to:
+
+```
+.env
+```
+
+Then provide local development values.
+
+Never commit `.env`.
+
+### 5. Start infrastructure
+
+```bash
+docker compose up -d
+```
+
+Expected services:
+
+```
+embedlead-postgres
+embedlead-redis
+```
+
+Verify:
+
+```bash
+docker ps
+```
+
+PostgreSQL and Redis should report healthy.
+
+### 6. Run database migrations
 
 ```bash
 alembic upgrade head
 ```
 
-### 6. Start the API
+### 7. Start the API
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-### 7. Start the Celery worker
+API:
 
-```bash
-celery -A app.workers.celery_app.celery_app worker --loglevel=info
+```
+http://127.0.0.1:8000
 ```
 
-## Development Commands
+Health endpoint:
+
+```
+http://127.0.0.1:8000/api/v1/health
+```
+
+Readiness endpoint:
+
+```
+http://127.0.0.1:8000/api/v1/ready
+```
+
+---
+
+## Running the Tests
 
 Run the complete test suite:
 
@@ -460,164 +394,510 @@ Run the complete test suite:
 pytest -v
 ```
 
-Run Ruff:
+Final verification:
+
+```text
+21 passed
+```
+
+Static checks:
 
 ```bash
 ruff check .
 ```
 
-Format the project:
+Expected:
 
-```bash
-ruff format .
+```text
+All checks passed!
 ```
 
-Run static type checking:
+Type checking:
 
 ```bash
 mypy app
 ```
 
-Compile Python sources:
-
-```bash
-python -m compileall app tests
-```
-
-Run migrations:
-
-```bash
-alembic upgrade head
-```
-
-Check the current migration:
-
-```bash
-alembic current
-```
-
-## Testing
-
-EmbedLead currently includes integration and unit tests covering:
-
-- public lead submission
-- public widget configuration caching
-- tenant isolation
-- authentication requirements
-- inactive widget rejection
-- invalid email rejection
-- oversized payload rejection
-- public API rate limiting
-- generated widget public key behavior
-- lead listing pagination
-- configuration parsing
-- payload limits
-- geolocation provider fallback
-
-Current test status:
+Expected:
 
 ```text
-15 passed
+Success: no issues found in 50 source files
 ```
 
-The test suite is designed to verify both normal behavior and important security boundaries.
+---
+
+## Embeddable Widget
+
+The widget is served as a versioned JavaScript bundle:
+
+```
+GET /api/v1/widget.v1.js
+```
+
+A generated customer snippet follows this pattern:
+
+```html
+<script src="http://127.0.0.1:8000/api/v1/widget.v1.js?key=PUBLIC_WIDGET_KEY"></script>
+```
+
+The actual generated snippet is returned by the widget embed endpoint.
+
+The JavaScript bundle automatically:
+
+- Reads its own script URL.
+- Extracts the public widget key.
+- Determines the API origin.
+- Loads widget configuration.
+- Renders the form.
+- Submits visitor data.
+- Displays success or failure feedback.
+
+---
+
+## Second-Origin Demo
+
+The repository contains:
+
+```
+demo/second-origin/index.html
+```
+
+Run a second local HTTP server from the project root:
+
+```bash
+python -m http.server 5500
+```
+
+Then open:
+
+```
+http://127.0.0.1:5500/demo/second-origin/
+```
+
+The API runs on:
+
+```
+http://127.0.0.1:8000
+```
+
+Because the ports differ, these are different browser origins.
+
+This demonstrates the real cross-origin embedding scenario required by the capstone.
+
+---
+
+## Public API
+
+### Health
+
+```
+GET /api/v1/health
+```
+
+Returns:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+### Readiness
+
+```
+GET /api/v1/ready
+```
+
+Returns the health state of the application dependencies.
+
+### Public Widget Configuration
+
+```
+GET /api/v1/public/widgets/{public_key}/config
+```
+
+Returns public configuration for an active widget.
+
+The response is cacheable using the configured widget cache TTL.
+
+### Public Lead Submission
+
+```
+POST /api/v1/public/widgets/{public_key}/leads
+```
+
+Example:
+
+```json
+{
+  "name": "Example User",
+  "email": "example@example.com",
+  "message": "Hello from an external website.",
+  "website": null
+}
+```
+
+Successful submissions return a success response.
+
+Invalid requests are rejected at the API boundary.
+
+### Widget JavaScript
+
+```
+GET /api/v1/widget.v1.js
+```
+
+Returns the versioned JavaScript widget bundle.
+
+The bundle is served with a long-lived immutable cache policy.
+
+### Widget Embed Information
+
+```
+GET /api/v1/widgets/{widget_id}/embed
+```
+
+Returns:
+
+- widget ID
+- public key
+- generated embed snippet
+
+---
 
 ## Security Model
 
-EmbedLead treats tenant isolation as a core backend invariant.
+### Tenant Isolation
 
-Important security controls include:
+Every owner-facing query is scoped to the authenticated tenant.
 
-### Tenant-Scoped Queries
+A tenant cannot use its credentials to access another tenant's widgets or leads.
 
-Authenticated resources are queried using both resource identifiers and tenant identifiers.
+This is covered by automated integration tests.
 
-This prevents a tenant from directly retrieving another tenant's resources by guessing or obtaining an object ID.
+### Public Keys
 
-### Public Key Isolation
+Public widget keys are intentionally safe for browser embedding.
 
-Public widget endpoints operate through generated widget public keys rather than exposing internal database identifiers as authorization credentials.
+They identify the widget but do not grant owner-level administrative access.
 
-### Password Security
+### Validation
 
-Passwords are never stored directly. Password hashing uses Argon2 through pwdlib.
+Pydantic validates public payloads before business logic executes.
 
-### JWT Authentication
+The API rejects:
 
-Management APIs use signed JWT access tokens.
+- invalid email addresses
+- oversized fields
+- malformed input
+- inactive widgets
 
 ### Rate Limiting
 
-Public lead submission endpoints are rate limited to reduce abuse.
+Public lead submission is rate-limited to prevent a single source from flooding
+the service.
 
-### Request Size Limits
+Burst traffic is rejected with HTTP 429.
 
-Large request bodies are rejected before application processing.
+### Honeypot
 
-### CORS Restrictions
+The widget contains a hidden `website` field.
 
-Allowed origins are controlled through configuration rather than allowing arbitrary origins.
+Normal visitors leave it empty.
 
-## Design Principles
+A populated value is treated as spam and is not persisted.
 
-EmbedLead follows several backend engineering principles:
+### CORS
 
-- Keep API routes thin.
-- Put business logic in services.
-- Keep database access inside repositories.
-- Enforce tenant boundaries at the data-access layer.
-- Keep public and authenticated API concerns separated.
-- Use asynchronous database access.
-- Cache frequently accessed public configuration.
-- Move background work to Celery.
-- Validate external input at the API boundary.
-- Fail safely when optional geolocation services are unavailable.
-- Keep configuration environment-driven.
-- Test security boundaries rather than only happy paths.
+The public browser-facing API is configured for cross-origin requests.
 
-## Current Status
+The second-origin demo verifies the actual browser integration rather than relying
+only on server-side requests.
 
-EmbedLead has a working backend foundation with:
+---
 
-- multi-tenant data model
+## Resilience
+
+### Geo Fallback
+
+Geo enrichment follows:
+
+```text
+Provider A
+    │
+    ├── success → use result
+    │
+    └── failure
+            │
+            ▼
+        Provider B
+            │
+            ├── success → use result
+            │
+            └── failure → continue without geo
+```
+
+Geo enrichment is deliberately non-critical.
+
+A geo provider outage must not prevent lead persistence.
+
+Automated tests mock providers so fallback behavior remains deterministic.
+
+### Notification Failure
+
+Notification is a secondary side effect.
+
+The sequence is:
+
+```text
+Receive request
+      ↓
+Validate
+      ↓
+Protect
+      ↓
+Enrich
+      ↓
+Persist lead
+      ↓
+Notify
+```
+
+If notification fails, the lead remains persisted and the primary operation remains
+successful.
+
+This behavior is explicitly covered by integration tests.
+
+### Background Processing
+
+Celery infrastructure is included for notification/background work.
+
+The design keeps slow or non-critical operations away from the critical persistence
+path.
+
+The Windows development environment can encounter multiprocessing permission
+limitations when running a Celery worker with the default process pool. The core API
+and deterministic automated tests remain unaffected, and notification failure
+is explicitly tested at the application boundary.
+
+### Caching
+
+Two separate caching strategies are used:
+
+**Widget JavaScript**
+
+The versioned bundle uses a long-lived immutable cache policy:
+
+```
+Cache-Control: public, max-age=31536000, immutable
+```
+
+Because the filename contains the version, a future bundle can be released under
+a new URL.
+
+**Widget Configuration**
+
+Configuration uses a shorter configurable cache lifetime so widget configuration can
+change without requiring a new JavaScript bundle.
+
+---
+
+## Testing Strategy
+
+The test suite focuses on failure modes rather than only happy paths.
+
+Coverage includes:
+
+- public lead submission
 - authentication
-- widget management
-- public widget APIs
-- lead capture
-- lead metadata
-- geolocation lookup with fallback
-- Redis caching
-- Celery task infrastructure
+- inactive widgets
+- invalid email
+- oversized payloads
 - rate limiting
-- payload protection
-- PostgreSQL persistence
-- Alembic migrations
-- integration tests
-- unit tests
-- Ruff linting and formatting
-- strict mypy type checking
+- tenant isolation
+- widget delivery
+- widget public-key submission
+- pagination
+- honeypot spam protection
+- notification failure
+- analytics
+- analytics authorization
+- configuration parsing
+- CORS configuration
+- payload limits
+- geo provider success
+- geo provider fallback
 
-The project is structured as a foundation for further SaaS-oriented development rather than as a simple CRUD demonstration.
+Final result:
 
-## Future Improvements
+```text
+21 passed in 8.25s
+```
 
-Potential next-stage improvements include:
+---
 
-- production email/webhook notification providers
-- tenant-level API keys
-- webhook delivery with retry and dead-letter handling
-- structured audit logging
-- advanced lead filtering and search
-- configurable widget schemas
-- frontend embeddable widget package
-- API documentation examples
-- observability metrics
-- distributed tracing
-- deployment manifests
-- CI/CD pipelines
-- production containerization
-- horizontal scaling strategies
+## Quality Gates
+
+The final repository passes:
+
+```bash
+ruff check .
+```
+```text
+All checks passed!
+```
+
+and:
+
+```bash
+mypy app
+```
+```text
+Success: no issues found in 50 source files
+```
+
+and:
+
+```bash
+pytest -v
+```
+```text
+21 passed
+```
+
+---
+
+## Evidence
+
+Detailed Definition-of-Done proof is maintained in:
+
+```
+EVIDENCE.md
+```
+
+It contains concrete test names, command output, database verification, widget
+delivery evidence, cross-origin evidence, and the final verification summary.
+
+Screenshots captured during final verification provide additional visual evidence.
+
+---
+
+## AI-Assisted Development
+
+AI assistance was used during development.
+
+The AI was treated as an engineering assistant rather than an authority.
+
+Generated or suggested implementation was:
+
+- inspected,
+- executed locally,
+- tested,
+- corrected when necessary,
+- verified through static analysis and integration tests.
+
+The complete development and AI-usage record is maintained in:
+
+```
+BUILDLOG.md
+```
+
+---
+
+## Required Submission Pack
+
+The repository contains the five required capstone submission files:
+
+- `README.md`
+- `capstone.yaml`
+- `EVIDENCE.md`
+- `BUILDLOG.md`
+- `.env.example`
+
+These files are intentionally kept in the repository root so an evaluator can find
+them immediately.
+
+---
+
+## Definition of Done
+
+The core capstone requirements are implemented and verified:
+
+- [x] Authenticated widget management
+- [x] Multi-tenant authorization
+- [x] Tenant isolation
+- [x] Widget embed snippet
+- [x] Public widget configuration
+- [x] Versioned JavaScript bundle
+- [x] Second-origin rendering
+- [x] Cross-origin submissions
+- [x] Boundary validation
+- [x] Oversized payload protection
+- [x] Rate limiting
+- [x] Honeypot spam protection
+- [x] IP metadata
+- [x] Geo provider fallback
+- [x] Graceful geo failure
+- [x] Safe notification failure
+- [x] Lead persistence
+- [x] Pagination
+- [x] Tenant-scoped analytics
+- [x] Alembic migrations
+- [x] Automated tests
+- [x] Ruff
+- [x] Strict mypy
+- [x] Docker PostgreSQL
+- [x] Redis infrastructure
+- [x] Required submission-pack files
+
+---
+
+## Limitations
+
+This is intentionally a local capstone implementation rather than a production
+internet deployment.
+
+Current limitations include:
+
+- No real CDN.
+- No production domain.
+- No production hosting requirement.
+- The customer site is represented by a local second-origin HTML server.
+- The widget bundle is plain JavaScript rather than a minified production build.
+- Notification infrastructure is demonstrated locally and tested for failure safety.
+- Geo providers are mocked in automated tests to keep fallback behavior deterministic.
+- The dashboard is primarily an API/backend capability rather than a full frontend
+  analytics application.
+- Celery's Windows process-pool behavior can require a Linux/WSL/containerized
+  worker environment for production-style multiprocessing.
+
+These limitations do not change the core capstone acceptance requirements.
+
+---
+
+## Demo Flow
+
+The intended six-minute demonstration is:
+
+1. Create a widget through the authenticated API.
+2. Show the generated public key and one-line script.
+3. Open the second-origin customer website.
+4. Show the widget rendering.
+5. Submit a lead.
+6. Show the lead persisted in PostgreSQL/dashboard API.
+7. Demonstrate invalid input rejection.
+8. Demonstrate rate limiting.
+9. Demonstrate honeypot spam protection.
+10. Demonstrate geo-provider fallback.
+11. Demonstrate notification failure without losing the lead.
+12. Close with analytics and tenant isolation.
+
+The project is designed so the most important story is not the form itself:
+
+> EmbedLead safely accepts untrusted data from websites it does not control.
+
+---
 
 ## License
 
-This project is currently intended as a portfolio and engineering project.
+MIT

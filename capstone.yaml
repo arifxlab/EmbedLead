@@ -1,0 +1,35 @@
+name: EmbedLead
+description: Embeddable Widget & Lead-Capture Platform
+track: Backend
+capstone: Embeddable Widget & Lead-Capture Platform
+
+run: uvicorn app.main:app --reload
+seed: python scripts/e2e_setup.py
+test: pytest -v
+base_url: http://127.0.0.1:8000
+
+endpoints:
+  health: /api/v1/health
+  readiness: /api/v1/ready
+  widget_script: /api/v1/widget.v1.js
+  widget_config: /api/v1/public/widgets/{public_key}/config
+  public_leads: /api/v1/public/widgets/{public_key}/leads
+  widget_embed: /api/v1/widgets/{widget_id}/embed
+  widget_management: /api/v1/widgets
+  leads: /api/v1/leads
+  analytics: /api/v1/analytics/overview
+
+verification:
+  architecture: Multi-tenant FastAPI application with PostgreSQL and Redis
+  authentication: JWT-protected owner APIs
+  tenant_isolation: Tenant-scoped widget and lead queries
+  public_widget: Versioned JavaScript bundle with cross-origin embedding
+  validation: Pydantic boundary validation
+  rate_limiting: Redis-backed public submission rate limiting
+  spam_protection: Honeypot field
+  geo_enrichment: Primary provider with fallback provider
+  safe_side_effects: Lead persistence remains successful when notification fails
+  caching: Redis-backed widget configuration caching
+  background_jobs: Celery notification infrastructure
+
+status: complete
